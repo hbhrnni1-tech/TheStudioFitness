@@ -1,0 +1,9 @@
+{
+  "name": "studio-chatbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "צ'אט בוט שירות לקוחות לסטודיו אימונים אישיים",
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}
