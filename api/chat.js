@@ -50,7 +50,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'messages array is required' });
   }
 
-  // Basic guardrails: cap history length and message size sent upstream
   const trimmedMessages = messages.slice(-20).map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: String(m.content || '').slice(0, 4000) }]
@@ -58,3 +57,30 @@ export default async function handler(req, res) {
 
   try {
     const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: trimmedMessages,
+          generationConfig: { maxOutputTokens: 1000 }
+        })
+      }
+    );
+
+    const data = await geminiRes.json();
+
+    if (!geminiRes.ok) {
+      console.error('Gemini API error:', data);
+      return res.status(geminiRes.status).json({ error: 'Upstream API error' });
+    }
+
+    const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    return res.status(200).json({ reply: replyText || 'מצטער, לא הצלחתי לענות כרגע. אפשר לנסות שוב?' });
+  } catch (err) {
+    console.error('Server error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
