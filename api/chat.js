@@ -1,5 +1,5 @@
 // Vercel Serverless Function — POST /api/chat
-// Keeps the Anthropic API key on the server. Never expose it in frontend code.
+// Using Google Gemini API (free tier).
 
 const SYSTEM_PROMPT = `אתה צ'אט בוט שירות לקוחות ומומחה שיווקי עבור סטודיו אימונים אישיים.
 המטרה שלך היא לענות ללקוחות מתעניינים וקיימים בצורה אדיבה, מקצועית, מכירתית ותמציתית, ולעזור להם להבין את השירותים שלנו או לקבוע פגישת הכרות.
@@ -40,9 +40,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set on the server' });
+    return res.status(500).json({ error: 'GEMINI_API_KEY is not set on the server' });
   }
 
   const { messages } = req.body || {};
@@ -51,37 +51,32 @@ export default async function handler(req, res) {
   }
 
   const trimmedMessages = messages.slice(-20).map(m => ({
-    role: m.role === 'assistant' ? 'assistant' : 'user',
-    content: String(m.content || '').slice(0, 4000)
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: String(m.content || '').slice(0, 4000) }]
   }));
 
   try {
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: SYSTEM_PROMPT,
-        messages: trimmedMessages
-      })
-    });
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: trimmedMessages,
+          generationConfig: { maxOutputTokens: 1000 }
+        })
+      }
+    );
 
-    const data = await anthropicRes.json();
+    const data = await geminiRes.json();
 
-    if (!anthropicRes.ok) {
-      console.error('Anthropic API error:', data);
-      return res.status(anthropicRes.status).json({ error: 'Upstream API error' });
+    if (!geminiRes.ok) {
+      console.error('Gemini API error:', data);
+      return res.status(geminiRes.status).json({ error: 'Upstream API error' });
     }
 
-    const replyText = (data.content || [])
-      .map(block => (block.type === 'text' ? block.text : ''))
-      .join('\n')
-      .trim();
+    const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     return res.status(200).json({ reply: replyText || 'מצטער, לא הצלחתי לענות כרגע. אפשר לנסות שוב?' });
   } catch (err) {
